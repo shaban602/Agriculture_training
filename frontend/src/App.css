@@ -11,9 +11,11 @@
   -moz-osx-font-smoothing: grayscale;
   font-optical-sizing: auto;
   font-weight: 400;
-  --green: #247448;
-  --green-dark: #183f2b;
-  --green-light: #eaf4ec;
+  --green: #00876a;
+  --green-dark: #00634f;
+  --green-light: #e6f3ef;
+  --burgundy: #a50927;
+  --brand-blue: #234d86;
   --muted: #78847c;
   --border: #e8ece7;
 }
@@ -45,12 +47,88 @@ button:disabled {
 
 button:focus-visible,
 input:focus-visible {
-  outline: 3px solid #9dc9a8;
+  outline: 3px solid #91cbbc;
   outline-offset: 2px;
 }
 
 .app-shell {
   min-height: 100vh;
+}
+.login-page {
+  display: grid;
+  min-height: 100vh;
+  place-items: center;
+  padding: 24px;
+}
+
+.auth-loading {
+  color: var(--green-dark);
+}
+
+.login-page {
+  background: linear-gradient(135deg, #f5f7f4, #e6f3ef);
+}
+
+.login-panel {
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 420px);
+  gap: 16px;
+  padding: 34px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 55px #143b2b12;
+}
+
+.login-logo {
+  width: 205px;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto 8px;
+}
+
+.login-panel > .eyebrow {
+  text-align: center;
+}
+
+.login-panel h1 {
+  margin: 0;
+  color: var(--burgundy);
+  font-family: "Manrope", sans-serif;
+  font-size: 27px;
+  text-align: center;
+}
+
+.login-description {
+  margin: -10px 0 5px;
+  color: #78847c;
+  font-size: 13px;
+  text-align: center;
+}
+
+.login-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: #526256;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.login-field input {
+  width: 100%;
+  min-height: 43px;
+  padding: 10px 12px;
+  border: 1px solid #dfe6df;
+  border-radius: 7px;
+  background: #fff;
+  color: #304336;
+}
+
+.login-submit {
+  width: 100%;
+  margin-top: 5px;
 }
 
 .sidebar {
@@ -68,8 +146,8 @@ input:focus-visible {
 .brand {
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 0 9px 30px;
+  justify-content: center;
+  padding: 0 0 27px;
 }
 
 .brand-mark {
@@ -138,8 +216,8 @@ input:focus-visible {
 }
 
 .nav-item.active {
-  background: #eaf4ec;
-  color: #22683f;
+  background: var(--green-light);
+  color: var(--green-dark);
   font-weight: 700;
 }
 
@@ -298,7 +376,7 @@ input:focus-visible {
 
 .page-heading h1 {
   margin: 8px 0 6px;
-  color: #203c2b;
+  color: var(--burgundy);
   font-family: "Manrope", sans-serif;
   font-size: clamp(25px, 3vw, 31px);
   font-weight: 800;
@@ -331,13 +409,13 @@ input:focus-visible {
 
 .primary-button {
   border: 1px solid var(--green);
-  background: var(--green);
+  background-color: var(--green);
   color: #fff;
-  box-shadow: 0 3px 7px #24744818;
+  box-shadow: 0 3px 7px #00876a18;
 }
 
 .primary-button:hover {
-  background: #1c5e39;
+  background: var(--green-dark);
   transform: translateY(-1px);
 }
 
@@ -361,7 +439,7 @@ input:focus-visible {
   min-height: 230px;
   overflow: hidden;
   border-radius: 15px;
-  background: linear-gradient(110deg, #183f2b 0%, #286843 65%, #468355 100%);
+  background: linear-gradient(110deg, #00634f 0%, #00876a 65%, #35a486 100%);
   color: white;
 }
 
@@ -407,7 +485,7 @@ input:focus-visible {
   margin-top: 16px;
   border: 0;
   background: #fff;
-  color: #245a38;
+  color: var(--green-dark);
 }
 
 .banner-button:hover {
@@ -625,14 +703,14 @@ input:focus-visible {
   padding: 5px 0;
   border: 0;
   background: transparent;
-  color: #34754a;
+  color: var(--brand-blue);
   font-size: 11px;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .text-button:hover {
-  color: #183f2b;
+  color: var(--burgundy);
 }
 
 .recent-list {
@@ -933,7 +1011,7 @@ tbody tr:last-child td {
 
 .modal-heading h2 {
   margin: 8px 0 5px;
-  color: #254530;
+  color: var(--burgundy);
   font-family: "Manrope", sans-serif;
   font-size: 22px;
   font-weight: 800;
@@ -1332,7 +1410,8 @@ button.stat-card {
   padding: 0 10px;
 }
 
-.record-form input:disabled {
+.record-form input:disabled,
+.record-form select:disabled {
   background: #f4f6f3;
   color: #758078;
   cursor: not-allowed;
@@ -1353,9 +1432,10 @@ button.stat-card {
 
 /* Layout for the current App.jsx structure. */
 .brand-logo {
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
+  display: block;
+  width: 100%;
+  max-width: 216px;
+  height: auto;
   object-fit: contain;
 }
 
@@ -1389,7 +1469,7 @@ button.stat-card {
 
 .topbar h1 {
   margin: 0;
-  color: #203c2b;
+  color: var(--burgundy);
   font-family: "Manrope", sans-serif;
   font-size: 20px;
   font-weight: 800;
@@ -1408,14 +1488,37 @@ button.stat-card {
   font-weight: 700;
 }
 
-.profile > div:last-child strong {
-  font-size: 12px;
+.profile-details {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  max-width: 190px;
 }
 
-.profile > div:last-child p {
-  margin: 3px 0 0;
+.profile-details strong {
+  overflow: hidden;
+  color: #34493a;
+  font-size: 12px;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-details p {
+  overflow: hidden;
+  margin: 0;
   color: #87928a;
   font-size: 10px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.logout-button {
+  min-height: 34px;
+  padding: 0 11px;
+  white-space: nowrap;
 }
 
 .dashboard,
@@ -1434,7 +1537,7 @@ button.stat-card {
   padding: 28px 32px;
   overflow: hidden;
   border-radius: 12px;
-  background: linear-gradient(110deg, #183f2b, #286843 68%, #468355);
+  background: linear-gradient(110deg, #00634f, #00876a 68%, #35a486);
   color: white;
 }
 
@@ -1465,7 +1568,7 @@ button.stat-card {
   margin-top: 17px;
   border-color: white;
   background: white;
-  color: #245a38;
+  color: var(--green-dark);
 }
 
 .welcome-icon {
@@ -1558,7 +1661,8 @@ button.stat-card {
   font-weight: 600;
 }
 
-.record-form input {
+.record-form input,
+.record-form select {
   width: 100%;
   min-height: 40px;
   padding: 8px 10px;
@@ -1630,7 +1734,7 @@ button.stat-card {
     padding: 0 14px;
   }
 
-  .profile > div:last-child p {
+  .profile-details p {
     display: none;
   }
 

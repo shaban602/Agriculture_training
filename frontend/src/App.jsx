@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 
-const API = "http://127.0.0.1:5000/api";
+const API = (import.meta.env.VITE_API_URL || "/api").replace(/\/$/, "");
 
 const sections = [
   { name: "Dashboard", icon: "▦" },
@@ -44,7 +44,14 @@ const configurations = {
     endpoint: "events",
     fields: [
       { key: "event_id", label: "Event ID", type: "number", required: true },
-      { key: "trainer_id", label: "Trainer ID", type: "number" },
+      {
+        key: "trainer_id",
+        label: "Trainer",
+        type: "select",
+        optionsFrom: "Trainers",
+        optionKey: "trainer_id",
+        optionLabel: "full_name",
+      },
       { key: "event_name", label: "Event name" },
       { key: "event_date", label: "Date", type: "date" },
       { key: "event_location", label: "Location" },
@@ -56,8 +63,24 @@ const configurations = {
   Attendance: {
     endpoint: "attendance",
     fields: [
-      { key: "farmers_id", label: "Farmer ID", type: "number", required: true },
-      { key: "event_id", label: "Event ID", type: "number", required: true },
+      {
+        key: "farmers_id",
+        label: "Farmer",
+        type: "select",
+        optionsFrom: "Farmers",
+        optionKey: "farmers_id",
+        optionLabel: "full_name",
+        required: true,
+      },
+      {
+        key: "event_id",
+        label: "Training event",
+        type: "select",
+        optionsFrom: "Training Events",
+        optionKey: "event_id",
+        optionLabel: "event_name",
+        required: true,
+      },
       { key: "attendance_date", label: "Attendance date", type: "date" },
       { key: "feedback_score", label: "Feedback score", type: "number" },
       { key: "votes", label: "Votes", type: "number" },
@@ -68,8 +91,24 @@ const configurations = {
   "Product Adoption": {
     endpoint: "product-adoption",
     fields: [
-      { key: "event_id", label: "Event ID", type: "number", required: true },
-      { key: "farmers_id", label: "Farmer ID", type: "number", required: true },
+      {
+        key: "event_id",
+        label: "Training event",
+        type: "select",
+        optionsFrom: "Training Events",
+        optionKey: "event_id",
+        optionLabel: "event_name",
+        required: true,
+      },
+      {
+        key: "farmers_id",
+        label: "Farmer",
+        type: "select",
+        optionsFrom: "Farmers",
+        optionKey: "farmers_id",
+        optionLabel: "full_name",
+        required: true,
+      },
       { key: "product_name", label: "Product name" },
       { key: "adoption_date", label: "Adoption date", type: "date" },
       { key: "adoption_status", label: "Adoption status" },
@@ -81,7 +120,14 @@ const configurations = {
     endpoint: "expenses",
     fields: [
       { key: "expense_id", label: "Expense ID", type: "number", required: true },
-      { key: "event_id", label: "Event ID", type: "number" },
+      {
+        key: "event_id",
+        label: "Training event",
+        type: "select",
+        optionsFrom: "Training Events",
+        optionKey: "event_id",
+        optionLabel: "event_name",
+      },
       { key: "expense_name", label: "Expense name" },
       { key: "expense_description", label: "Description" },
       { key: "expense_date", label: "Expense date", type: "date" },
@@ -124,6 +170,11 @@ function displayValue(value) {
 
 function App() {
   const [active, setActive] = useState("Dashboard");
+  const [user, setUser] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [credentials, setCredentials] = useState({ username: "", password: "" });
   const [records, setRecords] = useState({});
   const [loading, setLoading] = useState(true);
   const [apiErrors, setApiErrors] = useState({});
@@ -133,14 +184,53 @@ function App() {
   const [formData, setFormData] = useState({});
   const [editingRow, setEditingRow] = useState(null);
 
+  useEffect(() => {
+    let isMounted = true;
+
+    fetch(`${API}/auth/me`, { credentials: "include" })
+      .then(async (response) => {
+        if (!response.ok) return null;
+        return (await response.json()).user;
+      })
+      .then((authenticatedUser) => {
+        if (isMounted) setUser(authenticatedUser);
+      })
+      .catch(() => {
+        if (isMounted) setLoginError("Unable to connect to the sign-in service.");
+      })
+      .finally(() => {
+        if (isMounted) setAuthChecking(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const loadRecords = useCallback(async () => {
-    const resources = Object.entries(configurations).filter(
-      ([, config]) => config.endpoint
+    if (!user) return;
+
+    const partnerSections = new Set(["Training Events", "Product Adoption"]);
+    const trainerSections = new Set([
+      "Farmers",
+      "Trainers",
+      "Training Events",
+      "Attendance",
+      "Product Adoption",
+      "Training Topics",
+    ]);
+    const resources = Object.entries(configurations).filter(([name, config]) =>
+      config.endpoint &&
+      (user.role === "admin" ||
+        (user.role === "trainer" && trainerSections.has(name)) ||
+        (user.role === "partner" && partnerSections.has(name)))
     );
 
     const results = await Promise.allSettled(
       resources.map(async ([name, config]) => {
-        const response = await fetch(`${API}/${config.endpoint}`);
+        const response = await fetch(`${API}/${config.endpoint}`, {
+          credentials: "include",
+        });
 
         if (!response.ok) {
           throw new Error(`${name}: HTTP ${response.status}`);
@@ -169,11 +259,26 @@ function App() {
     setApiErrors(errors);
 
     setLoading(false);
-  }, []);
+  }, [user]);
 
   useEffect(() => {
-    Promise.resolve().then(loadRecords);
-  }, [loadRecords]);
+    if (user) Promise.resolve().then(loadRecords);
+  }, [loadRecords, user]);
+
+  useEffect(() => {
+    if (!showForm) return;
+
+    function handleKeyDown(event) {
+      if (event.key === "Escape") {
+        setShowForm(false);
+        setEditingRow(null);
+        setNotice("");
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [showForm]);
 
   const rows = records[active] || [];
   const config = configurations[active];
@@ -185,6 +290,45 @@ function App() {
         .includes(search.toLowerCase())
     )
   );
+
+  async function signIn(event) {
+    event.preventDefault();
+    setLoginLoading(true);
+    setLoginError("");
+
+    try {
+      const response = await fetch(`${API}/auth/login`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(credentials),
+      });
+      const result = await response.json().catch(() => ({}));
+
+      if (!response.ok) throw new Error(result.message || "Sign in failed.");
+      setUser(result.user);
+      setCredentials({ username: "", password: "" });
+      setActive("Dashboard");
+    } catch (error) {
+      setLoginError(error.message || "Unable to sign in.");
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  async function signOut() {
+    try {
+      await fetch(`${API}/auth/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } finally {
+      setUser(null);
+      setRecords({});
+      setActive("Dashboard");
+      setShowForm(false);
+    }
+  }
 
   function openForm() {
     const initial = {};
@@ -233,6 +377,7 @@ function App() {
         : `${API}/${config.endpoint}`;
       const response = await fetch(endpoint, {
         method: editingRow ? "PUT" : "POST",
+        credentials: "include",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(
           Object.fromEntries(
@@ -283,7 +428,7 @@ function App() {
         `${API}/${config.endpoint}/${recordKeys
           .map((key) => encodeURIComponent(row[key]))
           .join("/")}`,
-        { method: "DELETE" }
+        { method: "DELETE", credentials: "include" }
       );
 
       const result = await response.json().catch(() => ({}));
@@ -310,21 +455,101 @@ function App() {
     { label: "Training Topics", value: (records["Training Topics"] || []).length, icon: "≡", section: "Training Topics" },
   ];
 
+  const roleSections = {
+    admin: sections.map((section) => section.name),
+    trainer: [
+      "Farmers",
+      "Trainers",
+      "Training Events",
+      "Attendance",
+      "Product Adoption",
+      "Training Topics",
+    ],
+    partner: ["Training Events", "Product Adoption"],
+  };
+  const visibleSections = sections.filter((section) =>
+    roleSections[user?.role]?.includes(section.name)
+  );
+  const canCreate = user?.role === "admin" || (
+    user?.role === "trainer" &&
+    ["Farmers", "Training Events", "Attendance", "Product Adoption"].includes(active)
+  );
+  const visibleStats = stats.filter((stat) =>
+    roleSections[user?.role]?.includes(stat.section)
+  );
+  const roleLabel = {
+    admin: "Central operations",
+    trainer: "Field veterinarian / trainer",
+    partner: "Agrovet partner",
+  }[user?.role];
+
+  if (authChecking) {
+    return <main className="auth-loading">Checking your session...</main>;
+  }
+
+  if (!user) {
+    return (
+      <main className="login-page">
+        <form className="login-panel" onSubmit={signIn}>
+          <img
+            className="login-logo"
+            src="/assets/livestock-logo.svg"
+            alt="Atlantis Life Science, for a better life"
+          />
+          <span className="eyebrow">AGRO TRAINING SYSTEM</span>
+          <h1>Sign in</h1>
+          <p className="login-description">Access your field training workspace.</p>
+
+          {loginError && <div className="alert error-alert">{loginError}</div>}
+
+          <label className="login-field">
+            Username
+            <input
+              autoComplete="username"
+              required
+              value={credentials.username}
+              onChange={(event) =>
+                setCredentials((previous) => ({
+                  ...previous,
+                  username: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <label className="login-field">
+            Password
+            <input
+              type="password"
+              autoComplete="current-password"
+              required
+              value={credentials.password}
+              onChange={(event) =>
+                setCredentials((previous) => ({
+                  ...previous,
+                  password: event.target.value,
+                }))
+              }
+            />
+          </label>
+          <button className="primary-button login-submit" type="submit" disabled={loginLoading}>
+            {loginLoading ? "Signing in..." : "Sign in"}
+          </button>
+        </form>
+      </main>
+    );
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <img className="brand-logo" src="/assets/livestock-logo.svg" alt="Atlantis Life livestock logo" />
-          <div>
-            <h2>Atlantis Life</h2>
-            <p>Livestock Training</p>
-          </div>
+          <img className="brand-logo" src="/assets/livestock-logo.svg" alt="Atlantis Life Science, for a better life" />
         </div>
 
         <p className="sidebar-heading">MAIN MENU</p>
 
         <nav className="navigation">
-          {sections.map((section) => (
+          {visibleSections.map((section) => (
             <button
               key={section.name}
               type="button"
@@ -345,7 +570,7 @@ function App() {
 
         <div className="sidebar-footer">
           <strong>Atlantis Life</strong>
-          <p>Livestock Training System</p>
+          <p>Agro Training System</p>
         </div>
       </aside>
 
@@ -357,11 +582,14 @@ function App() {
           </div>
 
           <div className="profile">
-            <div className="avatar">A</div>
-            <div>
-              <strong>Administrator</strong>
-              <p>System manager</p>
+            <div className="avatar">{user.username.slice(0, 1).toUpperCase()}</div>
+            <div className="profile-details">
+              <strong>{user.username}</strong>
+              <p>{roleLabel}</p>
             </div>
+            <button className="secondary-button logout-button" type="button" onClick={signOut}>
+              Sign out
+            </button>
           </div>
         </header>
 
@@ -370,17 +598,18 @@ function App() {
             <div className="welcome-panel">
               <div>
                 <span className="eyebrow">LIVESTOCK MANAGEMENT</span>
-                <h2>Welcome to your training dashboard</h2>
+                <h2>Field training, connected to farmer outcomes</h2>
                 <p>
-                  Manage farmers, organize training sessions, and monitor
-                  livestock development in one place.
+                  Coordinate regional training, capture farmer attendance and
+                  local animal-health needs, and track product adoption from
+                  one connected operations hub.
                 </p>
                 <button
                   className="primary-button"
                   type="button"
-                  onClick={() => setActive("Farmers")}
+                  onClick={() => setActive(user.role === "partner" ? "Training Events" : "Farmers")}
                 >
-                  View Farmers <span>→</span>
+                  {user.role === "partner" ? "View Events" : "View Farmers"} <span>→</span>
                 </button>
               </div>
               <div className="welcome-icon">🐄</div>
@@ -402,7 +631,7 @@ function App() {
             )}
 
             <div className="stats-grid">
-              {stats.map((stat) => (
+              {visibleStats.map((stat) => (
                 <button
                   className="stat-card"
                   key={stat.label}
@@ -422,7 +651,7 @@ function App() {
               ))}
             </div>
 
-            <div className="recent-panel">
+            {user.role !== "partner" && <div className="recent-panel">
               <div className="section-heading">
                 <div>
                   <h2>Recent Farmers</h2>
@@ -467,7 +696,7 @@ function App() {
                   </table>
                 </div>
               )}
-            </div>
+            </div>}
           </section>
         ) : (
           <section className="records-panel">
@@ -477,7 +706,7 @@ function App() {
                 <p>View and manage your {active.toLowerCase()} records.</p>
               </div>
 
-              {active !== "Reports" && (
+              {canCreate && (
                 <button
                   className="primary-button"
                   type="button"
@@ -488,7 +717,7 @@ function App() {
               )}
             </div>
 
-            {notice && <div className="alert">{notice}</div>}
+            {notice && !showForm && <div className="alert">{notice}</div>}
             {apiErrors[active] && (
               <div className="alert error-alert">
                 {active} could not be loaded. Check that your backend has this
@@ -497,48 +726,119 @@ function App() {
             )}
 
             {showForm && (
-              <form className="record-form" onSubmit={saveRecord}>
-                <h3>{editingRow ? "Edit" : "Add"} {active} Record</h3>
+              <div
+                className="modal-backdrop"
+                onMouseDown={(event) => {
+                  if (event.target === event.currentTarget) {
+                    setShowForm(false);
+                    setEditingRow(null);
+                    setNotice("");
+                  }
+                }}
+              >
+                <form
+                  className="modal record-form"
+                  role="dialog"
+                  aria-modal="true"
+                  aria-labelledby="record-form-title"
+                  onSubmit={saveRecord}
+                >
+                  <div className="modal-heading">
+                    <div>
+                      <span className="eyebrow">
+                        {editingRow ? "UPDATE RECORD" : "NEW RECORD"}
+                      </span>
+                      <h2 id="record-form-title">
+                        {editingRow ? "Edit" : "Add"} {active} Record
+                      </h2>
+                      <p>Enter the details for this {active.toLowerCase()} record.</p>
+                    </div>
+                    <button
+                      className="close-button"
+                      type="button"
+                      aria-label="Close form"
+                      onClick={() => {
+                        setShowForm(false);
+                        setEditingRow(null);
+                        setNotice("");
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
 
-                <div className="form-grid">
-                  {config.fields.map((field) => (
-                    <label key={field.key}>
-                      {field.label}
-                      <input
-                        type={field.type || "text"}
-                        value={formData[field.key] ?? ""}
-                        required={field.required || false}
-                        disabled={Boolean(
-                          editingRow &&
-                            (config.keys || [config.id]).includes(field.key)
+                  {notice && <div className="alert error-alert">{notice}</div>}
+
+                  <div className="form-grid">
+                    {config.fields
+                      .filter((field) => !(config.id === field.key && !editingRow))
+                      .map((field) => (
+                      <label key={field.key}>
+                        {field.label}
+                        {field.type === "select" ? (
+                          <select
+                            value={formData[field.key] ?? ""}
+                            required={field.required || false}
+                            disabled={Boolean(
+                              editingRow &&
+                                (config.keys || [config.id]).includes(field.key)
+                            )}
+                            onChange={(event) =>
+                              setFormData((previous) => ({
+                                ...previous,
+                                [field.key]: event.target.value,
+                              }))
+                            }
+                          >
+                            <option value="">Select {field.label.toLowerCase()}</option>
+                            {(records[field.optionsFrom] || []).map((option) => (
+                              <option
+                                key={option[field.optionKey]}
+                                value={option[field.optionKey]}
+                              >
+                                {option[field.optionLabel] || field.label} (#{option[field.optionKey]})
+                              </option>
+                            ))}
+                          </select>
+                        ) : (
+                          <input
+                            type={field.type || "text"}
+                            value={formData[field.key] ?? ""}
+                            required={field.required || false}
+                            disabled={Boolean(
+                              editingRow &&
+                                (config.keys || [config.id]).includes(field.key)
+                            )}
+                            onChange={(event) =>
+                              setFormData((previous) => ({
+                                ...previous,
+                                [field.key]: event.target.value,
+                              }))
+                            }
+                          />
                         )}
-                        onChange={(event) =>
-                          setFormData((previous) => ({
-                            ...previous,
-                            [field.key]: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  ))}
-                </div>
+                      </label>
+                      ))}
+                  </div>
 
-                <div className="form-actions">
-                  <button className="primary-button" type="submit">
-                    {editingRow ? "Save Changes" : "Save Record"}
-                  </button>
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    onClick={() => {
-                      setShowForm(false);
-                      setEditingRow(null);
-                    }}
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
+                  <div className="modal-actions">
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      onClick={() => {
+                        setShowForm(false);
+                        setEditingRow(null);
+                        setNotice("");
+                      }}
+                    >
+                      Cancel
+                    </button>
+                    <button className="primary-button" type="submit">
+                      {editingRow ? "Save Changes" : "Save Record"}
+                    </button>
+                  </div>
+                </form>
+              </div>
             )}
 
             <div className="table-toolbar">
@@ -577,7 +877,7 @@ function App() {
                                 .replace(/\b\w/g, (letter) => letter.toUpperCase())}
                           </th>
                         ))}
-                      {rows.length > 0 && (config?.id || config?.keys) && (
+                      {rows.length > 0 && user.role === "admin" && (config?.id || config?.keys) && (
                         <th>Actions</th>
                       )}
                     </tr>
@@ -588,7 +888,7 @@ function App() {
                         {Object.keys(rows[0] || {}).map((key) => (
                           <td key={key}>{displayValue(row[key])}</td>
                         ))}
-                        {(config?.id || config?.keys) && (
+                        {user.role === "admin" && (config?.id || config?.keys) && (
                           <td>
                             <div className="row-actions">
                               <button

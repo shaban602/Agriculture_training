@@ -1,12 +1,58 @@
 
 const express = require("express");
 const cors = require("cors");
+const { rateLimit } = require("express-rate-limit");
 const pool = require("./config/db");
+const {
+  createSessionToken,
+  parseSessionToken,
+  requireAuth,
+  requireRole,
+  sessionCookie,
+  verifyPassword,
+} = require("./lib/auth");
 
 const app = express();
+const allowedOrigins = (process.env.CORS_ORIGINS || process.env.APP_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173")
+  .split(",")
+  .map((origin) => origin.trim())
+  .filter(Boolean);
 
-app.use(cors());
-app.use(express.json());
+if (process.env.NODE_ENV === "production") app.set("trust proxy", 1);
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  message: { message: "Too many sign-in attempts. Try again later." },
+});
+
+app.use(cors({
+  origin(origin, callback) {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    return callback(new Error("Origin is not allowed."));
+  },
+  credentials: true,
+}));
+app.use(express.json({ limit: "1mb" }));
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "strict-origin-when-cross-origin");
+  if (process.env.NODE_ENV === "production") {
+    res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+  }
+
+  if (
+    req.path.startsWith("/api/") &&
+    ["POST", "PUT", "PATCH", "DELETE"].includes(req.method) &&
+    !allowedOrigins.includes(req.get("origin"))
+  ) {
+    return res.status(403).json({ message: "Request origin is not allowed." });
+  }
+
+  next();
+});
 
 // --------------------------------------------------
 // BASIC ROUTES
@@ -14,7 +60,7 @@ app.use(express.json());
 
 app.get("/", (req, res) => {
   res.json({
-    message: "Atlantis Life Livestock Training System Backend is running!",
+    message: "Atlantis Life Agro Training System Backend is running!",
   });
 });
 
@@ -25,7 +71,49 @@ app.get("/api/health", (req, res) => {
   });
 });
 
-app.get("/api/test-db", async (req, res) => {
+app.post("/api/auth/login", loginLimiter, async (req, res) => {
+  const username = typeof req.body.username === "string" ? req.body.username.trim() : "";
+  const password = typeof req.body.password === "string" ? req.body.password : "";
+
+  if (!username || !password || username.length > 80 || password.length > 1024) {
+    return res.status(400).json({ message: "Enter a valid username and password." });
+  }
+
+  try {
+    const [users] = await pool.execute(
+      "SELECT user_id, username, password_hash, role FROM `Users` WHERE username = ? AND is_active = 1 LIMIT 1",
+      [username]
+    );
+    const user = users[0];
+
+    if (!user || !(await verifyPassword(password, user.password_hash))) {
+      return res.status(401).json({ message: "Invalid username or password." });
+    }
+
+    res.setHeader("Set-Cookie", sessionCookie(createSessionToken(user)));
+    res.setHeader("Cache-Control", "no-store");
+    res.json({
+      user: { id: user.user_id, username: user.username, role: user.role },
+    });
+  } catch (error) {
+    console.error("Login error:", error.message);
+    res.status(500).json({ message: "Unable to sign in right now." });
+  }
+});
+
+app.post("/api/auth/logout", (req, res) => {
+  res.setHeader("Set-Cookie", sessionCookie("", 0));
+  res.status(204).end();
+});
+
+app.get("/api/auth/me", requireAuth, (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  res.json({
+    user: { id: req.user.id, username: req.user.username, role: req.user.role },
+  });
+});
+
+app.get("/api/test-db", requireAuth, requireRole("admin"), async (req, res) => {
   try {
     const [rows] = await pool.query(
       "SELECT DATABASE() AS database_name, VERSION() AS mysql_version"
@@ -48,16 +136,26 @@ app.get("/api/test-db", async (req, res) => {
 
 // --------------------------------------------------
 // SHARED CRUD ROUTE CREATOR
-// Used for tables with one primary-key column.
-// IDs are supplied by the frontend because your
-// existing SQL tables do not use AUTO_INCREMENT.
+// Used for tables with one auto-increment primary key.
 // --------------------------------------------------
 
-function registerCrudRoutes({ path, table, primaryKey, columns }) {
+function registerCrudRoutes({
+  path,
+  table,
+  primaryKey,
+  columns,
+  readRoles = ["admin", "trainer"],
+  createRoles = ["admin"],
+}) {
   // GET ALL RECORDS
-  app.get(path, async (req, res) => {
+  app.get(path, requireAuth, requireRole(...readRoles), async (req, res) => {
     try {
-      const [rows] = await pool.query(`SELECT * FROM \`${table}\``);
+      const selectedColumns = columns
+        .map((column) => `\`${column}\``)
+        .join(", ");
+      const [rows] = await pool.query(
+        `SELECT ${selectedColumns} FROM \`${table}\` ORDER BY created_at DESC, \`${primaryKey}\` DESC`
+      );
       res.json(rows);
     } catch (error) {
       console.error(`Fetch ${table} error:`, error.message);
@@ -66,7 +164,7 @@ function registerCrudRoutes({ path, table, primaryKey, columns }) {
   });
 
   // GET ONE RECORD
-  app.get(`${path}/:${primaryKey}`, async (req, res) => {
+  app.get(`${path}/:${primaryKey}`, requireAuth, requireRole(...readRoles), async (req, res) => {
     try {
       const [rows] = await pool.query(
         `SELECT * FROM \`${table}\` WHERE \`${primaryKey}\` = ?`,
@@ -85,17 +183,11 @@ function registerCrudRoutes({ path, table, primaryKey, columns }) {
   });
 
   // ADD RECORD
-  app.post(path, async (req, res) => {
+  app.post(path, requireAuth, requireRole(...createRoles), async (req, res) => {
     try {
-      const submittedColumns = Object.keys(req.body).filter((column) =>
-        columns.includes(column)
+      const submittedColumns = Object.keys(req.body).filter(
+        (column) => columns.includes(column) && column !== primaryKey
       );
-
-      if (!submittedColumns.includes(primaryKey)) {
-        return res.status(400).json({
-          message: `Please provide ${primaryKey}.`,
-        });
-      }
 
       if (submittedColumns.length === 0) {
         return res.status(400).json({ message: "No valid fields supplied" });
@@ -107,13 +199,14 @@ function registerCrudRoutes({ path, table, primaryKey, columns }) {
         .join(", ");
       const placeholders = submittedColumns.map(() => "?").join(", ");
 
-      await pool.query(
+      const [result] = await pool.query(
         `INSERT INTO \`${table}\` (${columnSql}) VALUES (${placeholders})`,
         values
       );
 
       res.status(201).json({
         message: "Record added successfully",
+        id: result.insertId,
       });
     } catch (error) {
       console.error(`Add ${table} error:`, error.message);
@@ -140,7 +233,7 @@ function registerCrudRoutes({ path, table, primaryKey, columns }) {
   });
 
   // EDIT RECORD
-  app.put(`${path}/:${primaryKey}`, async (req, res) => {
+  app.put(`${path}/:${primaryKey}`, requireAuth, requireRole("admin"), async (req, res) => {
     try {
       const submittedColumns = Object.keys(req.body).filter(
         (column) => columns.includes(column) && column !== primaryKey
@@ -185,7 +278,7 @@ function registerCrudRoutes({ path, table, primaryKey, columns }) {
   });
 
   // DELETE RECORD
-  app.delete(`${path}/:${primaryKey}`, async (req, res) => {
+  app.delete(`${path}/:${primaryKey}`, requireAuth, requireRole("admin"), async (req, res) => {
     try {
       const [result] = await pool.query(
         `DELETE FROM \`${table}\` WHERE \`${primaryKey}\` = ?`,
@@ -221,6 +314,7 @@ registerCrudRoutes({
   path: "/api/farmers",
   table: "Farmers",
   primaryKey: "farmers_id",
+  createRoles: ["admin", "trainer"],
   columns: [
     "farmers_id",
     "full_name",
@@ -249,6 +343,8 @@ registerCrudRoutes({
   path: "/api/events",
   table: "Events",
   primaryKey: "event_id",
+  readRoles: ["admin", "trainer", "partner"],
+  createRoles: ["admin", "trainer"],
   columns: [
     "event_id",
     "trainer_id",
@@ -264,6 +360,8 @@ registerCrudRoutes({
   path: "/api/expenses",
   table: "Expenses",
   primaryKey: "expense_id",
+  readRoles: ["admin"],
+  createRoles: ["admin"],
   columns: [
     "expense_id",
     "event_id",
@@ -292,15 +390,22 @@ function registerCompositeCrudRoutes({
   table,
   primaryKeys,
   columns,
+  readRoles = ["admin", "trainer"],
+  createRoles = ["admin"],
 }) {
   const whereSql = primaryKeys
     .map((key) => `\`${key}\` = ?`)
     .join(" AND ");
 
   // GET ALL
-  app.get(path, async (req, res) => {
+  app.get(path, requireAuth, requireRole(...readRoles), async (req, res) => {
     try {
-      const [rows] = await pool.query(`SELECT * FROM \`${table}\``);
+      const selectedColumns = columns
+        .map((column) => `\`${column}\``)
+        .join(", ");
+      const [rows] = await pool.query(
+        `SELECT ${selectedColumns} FROM \`${table}\` ORDER BY created_at DESC, event_id DESC, farmers_id DESC`
+      );
       res.json(rows);
     } catch (error) {
       console.error(`Fetch ${table} error:`, error.message);
@@ -309,7 +414,7 @@ function registerCompositeCrudRoutes({
   });
 
   // GET ONE, USING BOTH PRIMARY-KEY VALUES
-  app.get(`${path}/:event_id/:farmers_id`, async (req, res) => {
+  app.get(`${path}/:event_id/:farmers_id`, requireAuth, requireRole(...readRoles), async (req, res) => {
     try {
       const [rows] = await pool.query(
         `SELECT * FROM \`${table}\` WHERE ${whereSql}`,
@@ -328,7 +433,7 @@ function registerCompositeCrudRoutes({
   });
 
   // ADD
-  app.post(path, async (req, res) => {
+  app.post(path, requireAuth, requireRole(...createRoles), async (req, res) => {
     try {
       const submittedColumns = Object.keys(req.body).filter((column) =>
         columns.includes(column)
@@ -379,7 +484,7 @@ function registerCompositeCrudRoutes({
   });
 
   // EDIT NON-KEY FIELDS
-  app.put(`${path}/:event_id/:farmers_id`, async (req, res) => {
+  app.put(`${path}/:event_id/:farmers_id`, requireAuth, requireRole("admin"), async (req, res) => {
     try {
       const submittedColumns = Object.keys(req.body).filter(
         (column) => columns.includes(column) && !primaryKeys.includes(column)
@@ -422,7 +527,7 @@ function registerCompositeCrudRoutes({
   });
 
   // DELETE USING BOTH KEY VALUES
-  app.delete(`${path}/:event_id/:farmers_id`, async (req, res) => {
+  app.delete(`${path}/:event_id/:farmers_id`, requireAuth, requireRole("admin"), async (req, res) => {
     try {
       const [result] = await pool.query(
         `DELETE FROM \`${table}\` WHERE ${whereSql}`,
@@ -445,6 +550,7 @@ registerCompositeCrudRoutes({
   path: "/api/attendance",
   table: "Attendance",
   primaryKeys: ["event_id", "farmers_id"],
+  createRoles: ["admin", "trainer"],
   columns: [
     "event_id",
     "farmers_id",
@@ -458,6 +564,8 @@ registerCompositeCrudRoutes({
   path: "/api/product-adoption",
   table: "Product_adoption",
   primaryKeys: ["event_id", "farmers_id"],
+  readRoles: ["admin", "trainer", "partner"],
+  createRoles: ["admin", "trainer"],
   columns: [
     "farmers_id",
     "event_id",
