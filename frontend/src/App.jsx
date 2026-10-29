@@ -496,7 +496,7 @@ function App() {
             src="/assets/livestock-logo.svg"
             alt="Atlantis Life Science, for a better life"
           />
-          <span className="eyebrow">AGRO TRAINING SYSTEM</span>
+          <span className="eyebrow">AGRICULTURE TRAINING SYSTEM</span>
           <h1>Sign in</h1>
           <p className="login-description">Access your field training workspace.</p>
 
@@ -570,7 +570,7 @@ function App() {
 
         <div className="sidebar-footer">
           <strong>Atlantis Life</strong>
-          <p>Agro Training System</p>
+          <p>Agriculture Training System</p>
         </div>
       </aside>
 

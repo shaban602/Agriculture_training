@@ -60,7 +60,7 @@ app.use((req, res, next) => {
 
 app.get("/", (req, res) => {
   res.json({
-    message: "Atlantis Life Agro Training System Backend is running!",
+    message: "Atlantis Life Agriculture Training System Backend is running!",
   });
 });
 

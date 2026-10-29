@@ -13,7 +13,7 @@ your-domain.example {
 	}
 
 	handle {
-		root * /srv/livestock-training-system/frontend/dist
+		root * /srv/agriculture-training-system/frontend/dist
 		try_files {path} /index.html
 		file_server
 	}

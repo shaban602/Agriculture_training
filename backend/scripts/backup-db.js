@@ -24,7 +24,7 @@ async function main() {
 
   fs.mkdirSync(backupDirectory, { recursive: true, mode: 0o700 });
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupName = `livestock_training_backup_${timestamp}.sql`;
+  const backupName = `agriculture_training_backup_${timestamp}.sql`;
   const temporaryPath = path.join(backupDirectory, `${backupName}.tmp`);
   const backupPath = path.join(backupDirectory, backupName);
   let output;
@@ -85,7 +85,7 @@ async function main() {
 
     const cutoff = Date.now() - retentionDays * 24 * 60 * 60 * 1000;
     for (const entry of fs.readdirSync(backupDirectory, { withFileTypes: true })) {
-      if (!entry.isFile() || !/^livestock_training_backup_.*\.sql$/.test(entry.name)) {
+      if (!entry.isFile() || !/^(?:agriculture|livestock)_training_backup_.*\.sql$/.test(entry.name)) {
         continue;
       }
 

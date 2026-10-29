@@ -1,5 +1,23 @@
 # Production Setup
 
+## Deploying to Vercel
+
+Import this repository into Vercel with the repository root as the project root. The root `vercel.json` builds the Vite frontend, and `api/[...path].js` routes `/api/*` requests through the Express backend.
+
+Vercel hosts the app code, not this project's MySQL database. Before deployment, provision a production MySQL database reachable from Vercel and apply both SQL migrations. Create an admin account by running `npm run user:create` from the `backend` directory in a secure terminal configured for that production database. Do not use the local database or local `.env` file as production configuration.
+
+Add these environment variables in the Vercel project settings for Production:
+
+- `NODE_ENV=production`
+- `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` for the production database
+- `SESSION_SECRET` generated with the command below
+- `APP_ORIGIN` and `CORS_ORIGINS` set to the exact Vercel production URL, such as `https://your-project.vercel.app`
+- `COOKIE_SAME_SITE=lax`
+
+Set the same origin variables for Preview deployments if you intend to sign in on preview URLs. Redeploy after setting or changing environment variables. Keep the database credentials and session secret only in Vercel's encrypted environment-variable settings; never commit them.
+
+The database must allow secure connections from Vercel's serverless functions. Use a provider and connection settings that meet your database's TLS and network-access requirements. Test the health endpoint at `/api/health`, then sign in with the admin account created for the production database.
+
 ## Before deployment
 
 1. Rotate any database credential that has been shared or committed. Create a dedicated MySQL application user with access only to this database; do not deploy with the MySQL root account.
