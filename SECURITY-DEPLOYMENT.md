@@ -10,6 +10,7 @@ Add these environment variables in the Vercel project settings for Production:
 
 - `NODE_ENV=production`
 - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` for the production database
+- `DB_SSL=true` when the database provider requires TLS, including TiDB Cloud Starter
 - `SESSION_SECRET` generated with the command below
 - `APP_ORIGIN` and `CORS_ORIGINS` set to the exact public origin when using a custom domain. Vercel's deployment and production URLs are also allowed automatically.
 - `COOKIE_SAME_SITE=lax`
