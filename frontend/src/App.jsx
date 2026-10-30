@@ -303,9 +303,25 @@ function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(credentials),
       });
-      const result = await response.json().catch(() => ({}));
+      const responseBody = await response.text();
+      let result = {};
 
-      if (!response.ok) throw new Error(result.message || "Sign in failed.");
+      if (responseBody) {
+        try {
+          result = JSON.parse(responseBody);
+        } catch {
+          if (response.ok) {
+            throw new Error("Sign-in service returned an invalid response.");
+          }
+        }
+      }
+
+      if (!response.ok) {
+        throw new Error(result.message || `Sign in failed (HTTP ${response.status}).`);
+      }
+      if (!result.user) {
+        throw new Error("Sign-in service returned an invalid response.");
+      }
       setUser(result.user);
       setCredentials({ username: "", password: "" });
       setActive("Dashboard");

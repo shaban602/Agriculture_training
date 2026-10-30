@@ -11,10 +11,10 @@ Add these environment variables in the Vercel project settings for Production:
 - `NODE_ENV=production`
 - `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, and `DB_NAME` for the production database
 - `SESSION_SECRET` generated with the command below
-- `APP_ORIGIN` and `CORS_ORIGINS` set to the exact Vercel production URL, such as `https://your-project.vercel.app`
+- `APP_ORIGIN` and `CORS_ORIGINS` set to the exact public origin when using a custom domain. Vercel's deployment and production URLs are also allowed automatically.
 - `COOKIE_SAME_SITE=lax`
 
-Set the same origin variables for Preview deployments if you intend to sign in on preview URLs. Redeploy after setting or changing environment variables. Keep the database credentials and session secret only in Vercel's encrypted environment-variable settings; never commit them.
+Redeploy after setting or changing environment variables. Keep the database credentials and session secret only in Vercel's encrypted environment-variable settings; never commit them.
 
 The database must allow secure connections from Vercel's serverless functions. Use a provider and connection settings that meet your database's TLS and network-access requirements. Test the health endpoint at `/api/health`, then sign in with the admin account created for the production database.
 

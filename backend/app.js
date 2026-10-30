@@ -13,10 +13,15 @@ const {
 } = require("./lib/auth");
 
 const app = express();
-const allowedOrigins = (process.env.CORS_ORIGINS || process.env.APP_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173")
+const configuredOrigins = (process.env.CORS_ORIGINS || process.env.APP_ORIGIN || "http://localhost:5173,http://127.0.0.1:5173")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const vercelOrigins = ["VERCEL_URL", "VERCEL_PROJECT_PRODUCTION_URL"]
+  .map((name) => process.env[name])
+  .filter(Boolean)
+  .map((host) => `https://${host.replace(/^https?:\/\//, "").replace(/\/$/, "")}`);
+const allowedOrigins = new Set([...configuredOrigins, ...vercelOrigins]);
 
 if (process.env.NODE_ENV === "production") app.set("trust proxy", 1);
 const loginLimiter = rateLimit({
@@ -29,7 +34,7 @@ const loginLimiter = rateLimit({
 
 app.use(cors({
   origin(origin, callback) {
-    if (!origin || allowedOrigins.includes(origin)) return callback(null, true);
+    if (!origin || allowedOrigins.has(origin)) return callback(null, true);
     return callback(new Error("Origin is not allowed."));
   },
   credentials: true,
@@ -46,7 +51,7 @@ app.use((req, res, next) => {
   if (
     req.path.startsWith("/api/") &&
     ["POST", "PUT", "PATCH", "DELETE"].includes(req.method) &&
-    !allowedOrigins.includes(req.get("origin"))
+    !allowedOrigins.has(req.get("origin"))
   ) {
     return res.status(403).json({ message: "Request origin is not allowed." });
   }
